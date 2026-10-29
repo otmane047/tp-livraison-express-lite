@@ -5,6 +5,7 @@
 pytest
 pytest-cov
 httpx
+httpx2
 
 # Visualisation & Analyse exploratoire (Notebooks)
 matplotlib

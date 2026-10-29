@@ -1,0 +1,14 @@
+[
+  "hour",
+  "day_of_week",
+  "weekend",
+  "distance_km",
+  "order_value_eur",
+  "weight_kg",
+  "stock_available",
+  "preparation_time_min",
+  "carrier_capacity",
+  "weather",
+  "delivery_zone",
+  "customer_type"
+]

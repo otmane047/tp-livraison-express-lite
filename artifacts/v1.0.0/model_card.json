@@ -5,7 +5,7 @@
   "task": "binary classification",
   "target": "express_eligible",
   "threshold": 0.5,
-  "trained_at": "2026-10-09T09:52:31.456805",
+  "trained_at": "2026-10-09T12:49:10.299155",
   "features": [
     "hour",
     "day_of_week",

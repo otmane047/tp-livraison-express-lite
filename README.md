@@ -1,4 +1,4 @@
-# Éligibilité à la Livraison Express - API & Architecture MLOps
+# Éligibilité à la Livraison Express - Architecture & Service ML
 
 Projet d'industrialisation et de mise en production d'un modèle de Machine Learning pour l'évaluation en temps réel de l'éligibilité des commandes à la livraison express (**M2 IA dans le Cloud - TP1**).
 
@@ -6,60 +6,67 @@ Projet d'industrialisation et de mise en production d'un modèle de Machine Lear
 
 ## 1. Présentation du Projet
 
-Ce projet transforme le notebook d'expérimentation initial (`project_test_v1_final_final2.ipynb`) en une application modulaire et robuste respectant :
-* Le contrat d'API fourni dans [`openapi.yml`](openapi.yml).
-* Les **Architecture Decision Records (ADR)** :
-  * [**ADR-001**](docs/adr/ADR-001-stockage-des-commandes.md) : Persistance des commandes via le Repository Pattern (`OrderStore` : SQLite et In-Memory).
-  * [**ADR-002**](docs/adr/ADR-002-stockage-des-artefacts-de-modele.md) : Découplage du stockage d'artefacts (`ModelArtifactStore`) et mise en cache mémoire au démarrage de l'API (`lifespan` FastAPI) pour une latence d'inférence minimale.
+Ce projet structure le prototype Machine Learning issu du notebook (`notebooks/project_test_v1_final_final2.ipynb`) en une application modulaire et robuste selon les principes de la **Clean Architecture** :
+- Séparation stricte entre **entraînement** (job CLI / batch) et **inférence** (API HTTP / CLI).
+- Inversion de dépendances (**Repository Pattern**) pour le stockage des commandes (`OrderRepository`) et des artefacts de modèle (`ModelRepository`).
+- Configuration externalisée via variables d'environnement (`pydantic-settings`).
+- Point d'entrée unique par composition root (`Core`).
 
 ---
 
-## 2. Architecture Logicielle
-
-Le projet est structuré selon les principes de la **Clean Architecture** (Architecture Hexagonale) :
+## 2. Arborescence du Projet
 
 ```text
 tp1/
-├── app/
-│   ├── api/                   # Couche Présentation (FastAPI, Routers, Lifespan)
-│   │   ├── deps.py            # Injection de dépendances
-│   │   ├── main.py            # Application FastAPI & Gestionnaires d'erreurs
-│   │   └── routes/            # Endpoints REST (health, orders, predictions, model)
-│   ├── core/                  # Domaine & Transverse
-│   │   ├── config.py          # Constantes, features, chemins d'artefacts
-│   │   ├── exceptions.py      # Hiérarchie d'exceptions typées
-│   │   └── schemas.py         # Schémas Pydantic V2 conformes à openapi.yml
-│   ├── infrastructure/        # Adaptateurs d'infrastructure concrets
-│   │   ├── in_memory_order_store.py  # Store en mémoire (tests isolés)
-│   │   ├── local_model_store.py      # Chargement des artefacts Joblib/JSON
-│   │   └── sqlite_order_store.py     # Store persistant SQLite local
-│   ├── interfaces/            # Ports / Contrats d'abstraction (ABC)
-│   │   ├── model_store.py     # Interface abstraite ModelArtifactStore
-│   │   └── order_store.py     # Interface abstraite OrderStore
-│   └── services/              # Logique métier & Pipeline ML
-│       ├── data_generator.py  # Générateur de commandes synthétiques
-│       ├── data_quality.py    # Contrôles qualité et nettoyage ETL
-│       ├── predictor.py       # Moteur d'inférence unitaire et batch
-│       └── trainer.py         # Entraînement Scikit-learn & MLflow
-├── tests/                     # Suite complète de tests unitaires et d'intégration
+├── src/
+│   ├── livraison_express_lite/          # Package principal
+│   │   ├── api/
+│   │   │   └── app.py                   # API FastAPI (/health, /health/ready, /predict)
+│   │   ├── core/
+│   │   │   ├── core.py                  # Racine de composition (Core singleton)
+│   │   │   └── learning/
+│   │   │       ├── ml_pipeline.py       # Pipeline Scikit-Learn (imputation, scaling, one-hot, logreg)
+│   │   │       ├── ml_predict.py        # Moteur d'inférence (MLPredict)
+│   │   │       ├── ml_trainer.py        # Entraînement et tracking MLflow (MLTrainer)
+│   │   │       ├── order_feature.py     # Contrat des colonnes et conversion DataFrame
+│   │   │       └── train_test_splitter.py # Split stratifié train/test
+│   │   ├── domain/
+│   │   │   ├── entities.py              # Entités métier (OrderEntity, PredictionEntity, ModelEntity)
+│   │   │   └── exceptions.py            # Exceptions du domaine
+│   │   ├── infrastructure/
+│   │   │   ├── model_repository.py      # Contrat ModelRepository (ABC)
+│   │   │   ├── order_repository.py      # Contrat OrderRepository (ABC)
+│   │   │   └── implementation/dev/
+│   │   │       ├── in_memory_model_repository.py # FileModelRepository (Joblib)
+│   │   │       ├── in_memory_order_repository.py # InMemoryOrderRepository
+│   │   │       └── order_generator.py   # Générateur de commandes synthétiques
+│   │   ├── cli.py                       # Commandes CLI (serve, train, predict)
+│   │   ├── config.py                    # Configuration Settings (Pydantic)
+│   │   └── __main__.py                  # Point d'entrée python -m
+│   └── livraison_express/               # Alias de commande CLI
+├── notebooks/                           # Notebook historique et artefacts
+│   ├── project_test_v1_final_final2.ipynb
+│   └── artifacts/
+│       ├── express_delivery_model.joblib
+│       ├── features.json
+│       └── metrics.json
+├── artifacts/                           # Artefacts synchronisés du modèle
+├── tests/                               # Suite de tests unitaires et d'intégration
 │   ├── test_api.py
-│   ├── test_data_quality.py
+│   ├── test_cli.py
+│   ├── test_data_generator.py
 │   ├── test_infra.py
+│   ├── test_learning.py
 │   └── test_predictor.py
-├── artifacts/                 # Artefacts versionnés générés par l'entraînement
-│   ├── express_delivery_model.joblib
-│   ├── features.json
-│   ├── metrics.json
-│   └── model_card.json
-├── docs/                      # Registre des décisions d'architecture (ADR)
-│   └── adr/
-├── scripts/                   # Scripts d'automatisation et CLI
-│   ├── run_server.py          # Lancement de l'API Uvicorn
-│   └── train.py               # Entraînement du modèle
-├── .env.example               # Modèle de variables d'environnement
-├── openapi.yml                # Contrat OpenAPI de référence
-├── requirements.txt           # Dépendances de production (API & Inférence)
-└── requirements-dev.txt       # Dépendances de développement & tests
+├── scripts/                             # Scripts utilitaires
+│   ├── run_server.py
+│   └── train.py
+├── main.py                              # Point d'entrée racine
+├── order.json                           # Exemple de payload de commande
+├── pyproject.toml                       # Configuration packaging et ruff
+├── requirements.txt                     # Dépendances de production
+├── requirements-dev.txt                 # Dépendances de développement & tests
+└── .env.example                         # Modèle de variables d'environnement
 ```
 
 ---
@@ -72,79 +79,80 @@ tp1/
 # Activation de l'environnement virtuel (sous Windows)
 .\.venv\Scripts\activate
 
-# Dépendances de production uniquement :
-pip install -r requirements.txt
-
-# OU dépendances complètes de développement (tests, linters, visualisation) :
+# Installation du package en mode éditable avec ses dépendances
+pip install -e .
 pip install -r requirements-dev.txt
 ```
 
 ### 3.2. Configuration de l'environnement (.env)
 
-Copiez le fichier d'exemple pour initialiser votre configuration locale :
-
 ```bash
 copy .env.example .env
 ```
 
-Vous pouvez y ajuster `DATABASE_URL`, `DEFAULT_THRESHOLD`, `API_PORT`, etc.
+Variables configurables :
+- `MODEL_PATH` : chemin vers l'artefact `.joblib` (par défaut `notebooks/artifacts/express_delivery_model.joblib`).
+- `MODEL_THRESHOLD` : seuil de décision (par défaut `0.5`).
+- `LOG_LEVEL` : niveau de log (`INFO`, `DEBUG`...).
 
-### 3.3. Entraînement du modèle (Génération des artefacts)
+---
 
-Pour exécuter le pipeline d'entraînement complet, calculer les métriques et générer les fichiers dans `artifacts/` :
+## 4. Utilisation de la CLI
 
+Le projet expose une interface en ligne de commande complète :
+
+### 4.1. Entraîner le modèle
 ```bash
-python scripts/train.py
+python -m livraison_express train
+# ou :
+python main.py train
+```
+Cette commande génère le dataset, entraîne le pipeline Scikit-Learn avec tracking MLflow, calcule les métriques et sauvegarde l'artefact `.joblib`, `metrics.json` et `features.json`.
+
+### 4.2. Prédire une commande en local (sans serveur HTTP)
+```bash
+python -m livraison_express predict --file order.json
+# ou :
+python main.py predict --file order.json
+```
+Sortie JSON attendue :
+```json
+{
+  "express_eligible": true,
+  "decision": "oui",
+  "probability": 0.9377,
+  "model_version": "1.0.0",
+  "prediction_timestamp": "2026-10-29T08:19:58.124916+00:00"
+}
 ```
 
-*Optionnel :* désactiver MLflow si vous ne l'utilisez pas localement :
+### 4.3. Démarrer le serveur API
 ```bash
-python scripts/train.py --no-mlflow
-```
-
-### 3.4. Lancement de l'API
-
-Démarrez le serveur FastAPI simplement avec :
-
-```bash
+python -m livraison_express serve --port 8000
+# ou :
 python main.py
-```
-ou avec Uvicorn en CLI :
-```bash
+# ou :
 uvicorn main:app --reload
 ```
-ou via le script dédié :
-```bash
-python scripts/run_server.py
-```
-
-L'API est alors disponible sur :
-* **Swagger UI (documentation interactive)** : [http://localhost:8000/docs](http://localhost:8000/docs)
-* **Spécification OpenAPI générée** : [http://localhost:8000/openapi.json](http://localhost:8000/openapi.json)
 
 ---
 
-## 4. Endpoints de l'API
+## 5. Endpoints de l'API HTTP
 
-| Méthode | Route | Tag | Séance | Description |
+| Méthode | Route | Description | Code Succès | Code Erreur |
 | :--- | :--- | :--- | :--- | :--- |
-| `GET` | `/health` | `health` | 1 | Sonde de vivacité (répond 200 si le processus est vivant) |
-| `GET` | `/health/ready` | `health` | 1 | Sonde de disponibilité (200 si le modèle est chargé et le stockage joignable, sinon 503) |
-| `POST` | `/v1/orders` | `orders` | 1 | Enregistrement immédiat d'une commande (retourne 202 Accepted) |
-| `GET` | `/v1/orders/{order_id}` | `orders` | 1 | Consultation d'une commande persistée (200 ou 404) |
-| `POST` | `/v1/predictions` | `predictions` | 1 | Prédiction synchrone d'éligibilité express d'une commande |
-| `POST` | `/v1/predictions/batch`| `predictions` | 5 | Prédiction par lot pour une liste de commandes |
-| `GET` | `/v1/predictions/{order_id}` | `predictions` | 5 | Relecture / historique d'une prédiction |
-| `GET` | `/v1/model` | `model` | 3 | Métadonnées complètes et métriques du modèle en service (Model Card) |
+| `GET` | `/health` | Sonde de vivacité du processus | `200 OK` | - |
+| `GET` | `/health/ready` | Sonde de disponibilité (modèle chargé en mémoire) | `200 OK` | `503 Service Unavailable` |
+| `POST` | `/predict` | Évaluation en temps réel de l'éligibilité d'une commande | `200 OK` | `422` (invalide), `503` (modèle absent) |
 
 ---
 
-## 5. Exécution des Tests Automatisés
+## 6. Tests Automatisés
 
-Le projet comprend **19 tests automatisés** couvrant la qualité des données, l'inférence, les adaptateurs d'infrastructure et les routes de l'API :
+La suite de tests automatisés valide l'ensemble des couches de l'application :
 
 ```bash
+pytest tests/
+# ou :
 python -m unittest discover -s tests -v
 ```
-
-Tous les tests s'exécutent en isolation sans dépendance de réseau externe.

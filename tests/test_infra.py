@@ -1,21 +1,22 @@
-"""
-Tests unitaires des composants d'infrastructure (OrderStores et ModelArtifactStore).
-Aligné sur ADR-001 et ADR-002.
-"""
+"""Tests unitaires pour les adaptateurs d'infrastructure (OrderRepository et ModelRepository)."""
 
-import os
 import tempfile
 import unittest
+from pathlib import Path
 
-from app.core.schemas import OrderFeatures
-from app.infrastructure.in_memory_order_store import InMemoryOrderStore
-from app.infrastructure.local_model_store import LocalModelArtifactStore
-from app.infrastructure.sqlite_order_store import SqliteOrderStore
+from livraison_express_lite.domain.entities import ModelEntity, OrderEntity
+from livraison_express_lite.infrastructure.implementation.dev.in_memory_model_repository import (
+    FileModelRepository,
+)
+from livraison_express_lite.infrastructure.implementation.dev.in_memory_order_repository import (
+    InMemoryOrderRepository,
+)
 
 
-class TestInfraStores(unittest.TestCase):
+class TestInfra(unittest.TestCase):
     def setUp(self):
-        self.sample_order = OrderFeatures(
+        self.sample_order = OrderEntity(
+            order_id="CMD-TEST-001",
             hour=14,
             day_of_week=2,
             weekend=0,
@@ -30,56 +31,54 @@ class TestInfraStores(unittest.TestCase):
             customer_type="premium",
         )
 
-    def test_in_memory_order_store(self):
-        store = InMemoryOrderStore()
-        self.assertTrue(store.ping())
+    def test_in_memory_order_repository_empty(self):
+        repo = InMemoryOrderRepository(generated=False)
+        self.assertEqual(repo.count(), 0)
+        self.assertIsNone(repo.get("CMD-NONE"))
 
-        oid = store.save(self.sample_order)
-        self.assertTrue(oid.startswith("CMD-"))
+        repo.save(self.sample_order)
+        self.assertEqual(repo.count(), 1)
+        self.assertEqual(repo.get("CMD-TEST-001"), self.sample_order)
+        self.assertEqual(len(repo.get_all()), 1)
 
-        retrieved = store.get_by_id(oid)
-        self.assertIsNotNone(retrieved)
-        self.assertEqual(retrieved["hour"], 14)
+        repo.clear()
+        self.assertEqual(repo.count(), 0)
 
-        # Simulation panne
-        store.set_healthy(False)
-        self.assertFalse(store.ping())
-        with self.assertRaises(RuntimeError):
-            store.get_by_id(oid)
+    def test_in_memory_order_repository_generated(self):
+        repo = InMemoryOrderRepository(generated=True)
+        self.assertEqual(repo.count(), 6000)
+        orders, labels = repo.get_training_data()
+        self.assertEqual(len(orders), 6000)
+        self.assertEqual(len(labels), 6000)
 
-    def test_sqlite_order_store(self):
-        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
-            tmp_db = f.name
+    def test_file_model_repository(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            model_file = Path(tmp_dir) / "test_model.joblib"
+            repo = FileModelRepository(str(model_file))
 
-        try:
-            store = SqliteOrderStore(db_path=tmp_db)
-            self.assertTrue(store.ping())
+            # Initialement absent
+            self.assertIsNone(repo.load())
 
-            oid = store.save(self.sample_order)
-            self.assertTrue(oid.startswith("CMD-"))
+            # Sauvegarde d'un objet factice et de sa model_card
+            dummy_model = {"pipeline": "mock"}
+            card = ModelEntity(
+                project="test-project",
+                model_version="1.0.0",
+                model_type="LogisticRegression",
+                task="classification",
+                target="express_eligible",
+                threshold=0.5,
+                features=["f1", "f2"],
+                metrics={"accuracy": 0.8},
+            )
+            repo.save(dummy_model, card)
 
-            retrieved = store.get_by_id(oid)
-            self.assertIsNotNone(retrieved)
-            self.assertEqual(retrieved["order_id"], oid)
-            self.assertEqual(retrieved["weather"], "normal")
-            self.assertEqual(retrieved["status"], "accepted")
+            self.assertTrue(model_file.exists())
+            self.assertTrue((model_file.parent / "metrics.json").exists())
+            self.assertTrue((model_file.parent / "features.json").exists())
 
-            # Inexistant
-            self.assertIsNone(store.get_by_id("CMD-NON-EXISTENT"))
-        finally:
-            if os.path.exists(tmp_db):
-                os.remove(tmp_db)
-
-    def test_local_model_artifact_store(self):
-        store = LocalModelArtifactStore("artifacts")
-        self.assertTrue(store.ping())
-
-        model = store.load_model("1.0.0")
-        self.assertIsNotNone(model)
-
-        metadata = store.load_metadata("1.0.0")
-        self.assertEqual(metadata["model_version"], "1.0.0")
-        self.assertEqual(metadata["project"], "eligibilite-livraison-express")
+            loaded = repo.load()
+            self.assertEqual(loaded, dummy_model)
 
 
 if __name__ == "__main__":

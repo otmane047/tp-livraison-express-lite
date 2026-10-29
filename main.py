@@ -1,28 +1,28 @@
-"""
-Point d'entrée racine de l'application.
+"""Point d'entrée racine du projet.
 
 Permet de :
-1. Lancer directement le serveur en local :
-   python main.py
-
-2. Lancer via Uvicorn en CLI :
+1. Lancer l'API via Uvicorn :
    uvicorn main:app --reload
+
+2. Utiliser la CLI :
+   python main.py serve
+   python main.py train
+   python main.py predict --file order.json
 """
 
-import uvicorn
-from app.api.main import app
-from app.core.config import API_HOST, API_PORT
+import sys
+
+try:
+    from src.livraison_express_lite.api.app import app
+    from src.livraison_express_lite.cli import main
+except ImportError:
+    from livraison_express_lite.api.app import app
+    from livraison_express_lite.cli import main
 
 __all__ = ["app"]
 
 if __name__ == "__main__":
-    print(f"Démarrage de l'API sur http://{API_HOST}:{API_PORT}")
-    print(f"Documentation Swagger UI : http://{API_HOST}:{API_PORT}/docs")
-    print(f"Spécification OpenAPI : http://{API_HOST}:{API_PORT}/openapi.json")
-
-    uvicorn.run(
-        "main:app",
-        host=API_HOST,
-        port=API_PORT,
-        reload=True,
-    )
+    if len(sys.argv) > 1:
+        sys.exit(main())
+    else:
+        sys.exit(main(["serve"]))

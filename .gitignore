@@ -6,6 +6,15 @@ ENV/
 
 .env
 
+# Build & packaging
+build/
+dist/
+*.egg-info/
+
+# IDEs
+.idea/
+.vscode/
+
 # Python cache
 __pycache__/
 *.py[cod]

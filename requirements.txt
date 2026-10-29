@@ -1,7 +1,7 @@
-# ── Dépendances de production (API & Modèle) ───────────────────
 fastapi
 uvicorn
 pydantic
+pydantic-settings
 python-dotenv
 pandas
 numpy

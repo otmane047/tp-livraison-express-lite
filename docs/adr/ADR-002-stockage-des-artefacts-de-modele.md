@@ -142,7 +142,7 @@ class ModelArtifactStore(ABC):
 ```python
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
-from app.services.model_store import get_model_artifact_store
+from app.infrastructure.local_model_store import LocalModelArtifactStore
 
 # État partagé en mémoire vive (Singleton)
 app_state = {}
