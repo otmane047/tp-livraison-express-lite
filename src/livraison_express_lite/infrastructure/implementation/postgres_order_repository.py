@@ -198,3 +198,4 @@ class PostgresOrderRepository(OrderRepository):
     def close(self) -> None:
         if self._connection and not self._connection.closed:
             self._connection.close()
+

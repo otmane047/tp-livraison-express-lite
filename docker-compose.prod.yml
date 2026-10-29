@@ -95,3 +95,4 @@ volumes:
     name: livraison_postgres_prod_data
   model_artifacts:
     name: livraison_model_artifacts
+

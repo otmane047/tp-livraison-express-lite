@@ -52,3 +52,4 @@ services:
       postgres-test:
         condition: service_healthy
     command: ["pytest", "tests/", "-v", "--disable-warnings"]
+

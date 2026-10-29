@@ -133,3 +133,4 @@ class ModelRetrainOrchestrator:
                 time.sleep(interval_seconds)
         except KeyboardInterrupt:
             logger.info("Arrêt de l'orchestrateur demandé par l'utilisateur.")
+
