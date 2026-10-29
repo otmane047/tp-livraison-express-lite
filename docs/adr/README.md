@@ -1,6 +1,6 @@
 # Registre des Décisions d'Architecture (Architecture Decision Records - ADR)
 
-Ce répertoire contient l'ensemble des **Architecture Decision Records (ADR)** pour le projet **`livraison-express-lite`** (M2 IA dans le Cloud - TP1).
+Ce répertoire contient l'ensemble des **Architecture Decision Records (ADR)** pour le projet **`livraison-express-lite`** (M2 IA dans le Cloud - TP1 & TP4).
 
 Les ADR documentent les choix techniques structurants, les contextes de décision, les alternatives évaluées et les conséquences opérationnelles pour assurer la pérennité, la sécurité et la scalabilité de l'architecture logicielle et MLOps.
 
@@ -15,6 +15,7 @@ Les ADR documentent les choix techniques structurants, les contextes de décisio
 | [**ADR-003**](file:///./ADR-003-plateforme-de-deploiement-et-services-cloud.md) | Plateforme d'hébergement et services Cloud pour la mise en production | **Accepté** | 2026-10-29 | Cloud vs On-Premise vs Local, Serverless Containers (Cloud Run / ECS), Services managés |
 | [**ADR-004**](file:///./ADR-004-strategie-de-deploiement-et-cycle-de-vie.md) | Stratégie de déploiement et cycle de vie des modèles ML | **Accepté** | 2026-10-29 | Déploiement Canary & Blue/Green, Sondes liveness/readiness, Auto-rollback sur dérive |
 | [**ADR-005**](file:///./ADR-005-securisation-des-flux-et-protection-des-donnees.md) | Sécurisation des flux d'entrées/sorties et protection des accès aux données | **Accepté** | 2026-10-29 | TLS 1.3, Auth, Validation Pydantic, Moindre privilège IAM, Chiffrement KMS, VPC privé |
+| [**ADR-006**](file:///./ADR-006-choix-sgbd-postgresql-vs-mongodb.md) | Choix du SGBD pour l'intégration des commandes ERP (PostgreSQL vs MongoDB) | **Accepté** | 2026-10-29 | Arbitrage PostgreSQL vs MongoDB, Gestion des schémas historiques, Ingestion ERP |
 
 ---
 

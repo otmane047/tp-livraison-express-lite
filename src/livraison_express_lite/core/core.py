@@ -74,7 +74,17 @@ class Core:
         self.configure_logging(self._settings)
         logger.info("Initialisation du contexte d'exécution")
 
-        self.order_repository = InMemoryOrderRepository(generated=True)
+        url = self._settings.order_repository_url
+        if url.startswith(("postgresql://", "postgres://")):
+            from ..infrastructure.implementation.postgres_order_repository import (
+                PostgresOrderRepository,
+            )
+            self.order_repository = PostgresOrderRepository(url)
+        elif url.startswith("mongodb://"):
+            from ..infrastructure.implementation.mongo_order_repository import MongoOrderRepository
+            self.order_repository = MongoOrderRepository(url)
+        else:
+            self.order_repository = InMemoryOrderRepository(generated=True)
         self.model_repository = FileModelRepository(self._settings.model_path)
         if load_model:
             self.model_pipeline = self.model_repository.load(self._settings.model_version)

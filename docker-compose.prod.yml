@@ -1,0 +1,97 @@
+# ── Environnement de Production (docker-compose.prod.yml) ─────────────────────
+# Déploiement complet en production :
+# 1. Base PostgreSQL persistante
+# 2. Simulateur ERP pour l'alimentation en flux continu
+# 3. API FastAPI de prédiction avec sonde de santé
+# 4. Orchestrateur MLOps de réentraînement continu
+# Usage:
+#   docker compose -f docker-compose.prod.yml up -d --build
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: livraison-postgres-prod
+    environment:
+      POSTGRES_DB: livraison_express
+      POSTGRES_USER: livraison
+      POSTGRES_PASSWORD: livraison
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_prod_data:/var/lib/postgresql/data
+      - ./docker/erp/postgres-init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U livraison -d livraison_express"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  erp-simulator:
+    build:
+      context: .
+      dockerfile: Dockerfile.erp-simulator
+    container_name: livraison-erp-simulator-prod
+    environment:
+      POSTGRES_DSN: postgresql://livraison:livraison@postgres:5432/livraison_express
+      BATCH_SIZE: 10
+      INTERVAL_SECONDS: 10
+      POSTGRES_HISTORY_ORDERS: 1000
+      RECENT_HISTORY_ORDERS: 200
+      LIVE_ORDER_LIMIT: 0
+      LOG_LEVEL: INFO
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: livraison-api-prod
+    environment:
+      ENV: prod
+      ORDER_REPOSITORY_URL: postgresql://livraison:livraison@postgres:5432/livraison_express
+      PORT: 8000
+      HOST: 0.0.0.0
+      MODEL_PATH: /app/artifacts/model.joblib
+      MODEL_VERSION: v1
+      LOG_LEVEL: INFO
+    ports:
+      - "8000:8000"
+    volumes:
+      - model_artifacts:/app/artifacts
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  orchestrator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: livraison-orchestrator-prod
+    command: ["python", "scripts/orchestrator.py", "--interval", "60", "--min-orders", "50"]
+    environment:
+      ENV: prod
+      ORDER_REPOSITORY_URL: postgresql://livraison:livraison@postgres:5432/livraison_express
+      MODEL_PATH: /app/artifacts/model.joblib
+      LOG_LEVEL: INFO
+    volumes:
+      - model_artifacts:/app/artifacts
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_prod_data:
+    name: livraison_postgres_prod_data
+  model_artifacts:
+    name: livraison_model_artifacts

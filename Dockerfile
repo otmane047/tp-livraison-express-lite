@@ -36,6 +36,8 @@ COPY --chown=appuser:appuser pyproject.toml .
 COPY --chown=appuser:appuser main.py .
 COPY --chown=appuser:appuser order.json .
 COPY --chown=appuser:appuser src/ ./src/
+COPY --chown=appuser:appuser scripts/ ./scripts/
+COPY --chown=appuser:appuser tests/ ./tests/
 COPY --chown=appuser:appuser notebooks/artifacts/ ./notebooks/artifacts/
 COPY --chown=appuser:appuser artifacts/ ./artifacts/
 

@@ -8,3 +8,5 @@ numpy
 scikit-learn
 joblib
 mlflow
+psycopg[binary]
+pymongo

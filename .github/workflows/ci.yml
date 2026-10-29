@@ -53,3 +53,4 @@ jobs:
       - name: Verify CLI commands
         run: |
           python -m livraison_express predict --file order.json
+

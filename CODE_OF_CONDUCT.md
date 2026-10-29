@@ -41,3 +41,4 @@ Ce code de conduite s'applique dans tous les espaces du projet (dépôt GitHub, 
 ## Signalement
 
 Les cas de comportements abusifs, harcelants ou autrement inacceptables peuvent être signalés aux mainteneurs responsables à : **`otmane047@gmail.com`**. Toutes les plaintes seront examinées rapidement et traitées de manière confidentielle.
+

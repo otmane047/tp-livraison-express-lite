@@ -41,3 +41,4 @@ Si vous découvrez une faille de sécurité potentielle dans ce projet :
 - **Zéro clé statique** : Aucun mot de passe ni clé d'API n'est stocké dans le dépôt (contrôle via Secret Manager et variables d'environnement).
 - **Conteneurs non-root** : L'image Docker s'exécute avec un utilisateur restreint (`appuser:1000`).
 - **Validation stricte** : Rejet automatique des charges utiles malveillantes via Pydantic et HTTPS TLS 1.3 obligatoire.
+

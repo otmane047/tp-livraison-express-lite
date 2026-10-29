@@ -1,0 +1,54 @@
+# ── Environnement de Test (docker-compose.test.yml) ──────────────────────────
+# Orchestre les tests unitaires et d'intégration avec PostgreSQL et l'ERP Simulator.
+# Usage:
+#   docker compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from test-runner
+
+services:
+  postgres-test:
+    image: postgres:17-alpine
+    container_name: livraison-postgres-test
+    environment:
+      POSTGRES_DB: livraison_test
+      POSTGRES_USER: livraison
+      POSTGRES_PASSWORD: livraison
+    ports:
+      - "${POSTGRES_TEST_PORT:-5433}:5432"
+    volumes:
+      - ./docker/erp/postgres-init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U livraison -d livraison_test"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  erp-simulator-test:
+    build:
+      context: .
+      dockerfile: Dockerfile.erp-simulator
+    container_name: livraison-erp-simulator-test
+    environment:
+      POSTGRES_DSN: postgresql://livraison:livraison@postgres-test:5432/livraison_test
+      BATCH_SIZE: 15
+      INTERVAL_SECONDS: 1
+      POSTGRES_HISTORY_ORDERS: 150
+      RECENT_HISTORY_ORDERS: 50
+      LIVE_ORDER_LIMIT: 20
+      LOG_LEVEL: INFO
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+
+  test-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: livraison-test-runner
+    environment:
+      ENV: test
+      ORDER_REPOSITORY_URL: postgresql://livraison:livraison@postgres-test:5432/livraison_test
+      MODEL_PATH: /app/artifacts/model.joblib
+      LOG_LEVEL: INFO
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+    command: ["pytest", "tests/", "-v", "--disable-warnings"]

@@ -63,6 +63,33 @@ def build_parser() -> argparse.ArgumentParser:
         help="Fichier JSON contenant une commande (champs du schéma OrderFeatures).",
     )
 
+    orchestrate = subcommands.add_parser(
+        "orchestrate",
+        help="Surveiller les nouvelles données et réentraîner le modèle si nécessaire.",
+    )
+    orchestrate.add_argument(
+        "--interval",
+        type=int,
+        default=60,
+        help="Intervalle de vérification en secondes (défaut : %(default)s).",
+    )
+    orchestrate.add_argument(
+        "--min-orders",
+        type=int,
+        default=50,
+        help="Nombre de nouvelles commandes minimum pour déclencher le réentraînement.",
+    )
+    orchestrate.add_argument(
+        "--once",
+        action="store_true",
+        help="Effectuer une seule vérification puis quitter.",
+    )
+    orchestrate.add_argument(
+        "--force",
+        action="store_true",
+        help="Forcer le réentraînement immédiatement.",
+    )
+
     return parser
 
 
@@ -78,6 +105,8 @@ def main(argv: list[str] | None = None) -> int:
             return _train()
         if args.command == "predict":
             return _predict(args.file)
+        if args.command == "orchestrate":
+            return _orchestrate(args)
     except KeyboardInterrupt:
         print("Interrompu.", file=sys.stderr)
         return 1
@@ -137,4 +166,19 @@ def _predict(file_path: str) -> int:
 
     prediction = predict_service.predict(order)
     print(json.dumps(asdict(prediction), ensure_ascii=False, indent=2))
+    return 0
+
+
+def _orchestrate(args: argparse.Namespace) -> int:
+    """Surveillance et réentraînement périodique du modèle."""
+    try:
+        from .core.orchestrator import ModelRetrainOrchestrator
+    except (ImportError, ValueError):
+        from src.livraison_express_lite.core.orchestrator import ModelRetrainOrchestrator
+
+    orchestrator = ModelRetrainOrchestrator(min_new_orders=args.min_orders)
+    if args.once:
+        orchestrator.evaluate_and_retrain(force=args.force)
+        return 0
+    orchestrator.run_loop(interval_seconds=args.interval)
     return 0

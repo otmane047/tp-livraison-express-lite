@@ -92,6 +92,7 @@ Le dossier [`docs/adr/`](docs/adr/) documente formellement les choix structurant
 3. [**ADR-003**](docs/adr/ADR-003-plateforme-de-deploiement-et-services-cloud.md) : **Plateforme de déploiement** (Cloud vs On-premise vs Local ; Google Cloud Run / AWS ECS Fargate, Cloud SQL / RDS, Secret Manager).
 4. [**ADR-004**](docs/adr/ADR-004-strategie-de-deploiement-et-cycle-de-vie.md) : **Stratégie de déploiement** (Canary Release 90/10 pour les modèles ML, Blue/Green pour les versions majeures, auto-rollback).
 5. [**ADR-005**](docs/adr/ADR-005-securisation-des-flux-et-protection-des-donnees.md) : **Sécurisation de bout en bout** (TLS 1.3, Auth API Key/JWT, validation Pydantic stricte, IAM sans clés statiques, chiffrement AES-256 KMS, VPC privé).
+6. [**ADR-006**](docs/adr/ADR-006-choix-sgbd-postgresql-vs-mongodb.md) : **Choix de la Base de Données (PostgreSQL vs MongoDB)** : Sélection de PostgreSQL pour l'historique complet (2015-présent), la robustesse relationnelle et le typage strict des features ML, tout en maintenant l'interchangeabilité via l'interface `OrderRepository`.
 
 ---
 
@@ -146,6 +147,18 @@ python main.py
 uvicorn main:app --reload
 ```
 
+### 5.4. Orchestrateur de réentraînement continu
+```bash
+# Lancement de l'orchestrateur (surveillance continue toutes les 60s, seuil de 50 nouvelles commandes)
+python -m livraison_express orchestrate --interval 60 --min-orders 50
+
+# Ou via le script dédié :
+python scripts/orchestrator.py --interval 60 --min-orders 50
+
+# Exécution en mode batch ponctuel (une seule vérification, ex: tâche cron) :
+python scripts/orchestrator.py --once
+```
+
 ---
 
 ## 6. Endpoints de l'API HTTP
@@ -158,19 +171,30 @@ uvicorn main:app --reload
 
 ---
 
-## 7. Conteneurisation Docker (Production)
+## 7. Conteneurisation & Environnements Docker Compose
 
-L'application intègre un `Dockerfile` multi-stage optimisé et sécurisé (utilisateur non-root, sans compilateurs en runtime, vérification de santé native `HEALTHCHECK`) :
+### 7.1. Environnement de Test (`docker-compose.test.yml`)
+Démarre une base PostgreSQL isolée (`livraison_test`), alimentée par l'ERP Simulator, et exécute automatiquement la suite de tests unitaires et d'intégration :
+```bash
+docker compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from test-runner
+```
+
+### 7.2. Environnement de Production (`docker-compose.prod.yml`)
+Déploie l'écosystème complet de production :
+- **PostgreSQL 17** avec volume persistant (`livraison_postgres_prod_data`).
+- **ERP Simulator** simulant le flux continu des commandes d'entreprise.
+- **API FastAPI** (serveur de prédiction en temps réel avec probes de santé).
+- **Orchestrateur MLOps** assurant le réentraînement continu et le quality gate automatique.
 
 ```bash
-# Construction de l'image
-docker build -t livraison-express-lite:latest .
+# Démarrage de tous les services de production en arrière-plan
+docker compose -f docker-compose.prod.yml up -d --build
 
-# Exécution du conteneur
-docker run -d -p 8000:8000 --name livraison-api livraison-express-lite:latest
+# Suivi des logs de l'API et de l'orchestrateur
+docker compose -f docker-compose.prod.yml logs -f api orchestrator
 
-# Test de l'API conteneurisée
-curl http://localhost:8000/health
+# Arrêt propre
+docker compose -f docker-compose.prod.yml down
 ```
 
 ---
@@ -178,8 +202,8 @@ curl http://localhost:8000/health
 ## 8. Tests Automatisés
 
 ```bash
-pytest tests/
+pytest tests/ -v
 # ou :
 python -m unittest discover -s tests -v
 ```
-18 tests unitaires et d'intégration validant 100% des cas sans dépendance externe.
+28 tests unitaires et d'intégration validant 100% des cas sans dépendance externe (mocks `psycopg` et `pymongo`, test client FastAPI, pipeline Scikit-Learn, générateur synthétique et orchestrateur de réentraînement).

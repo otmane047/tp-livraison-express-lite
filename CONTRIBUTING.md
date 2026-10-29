@@ -97,3 +97,4 @@ pytest --cov=livraison_express_lite tests/
 4. Poussez votre branche : `git push -u origin feature/ma-fonctionnalite`
 5. Ouvrez une **Pull Request vers `develop`** sur GitHub.
 6. Le pipeline CI exécutera automatiquement la suite de tests et le linter. Une fois validée par un pair, la PR sera fusionnée.
+
