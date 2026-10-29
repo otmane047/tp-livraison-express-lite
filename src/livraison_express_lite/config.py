@@ -7,6 +7,7 @@ ou depuis un fichier `.env` (voir `.env.example`), dans cet ordre de priorité.
 """
 
 from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 

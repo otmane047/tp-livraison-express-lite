@@ -1,6 +1,7 @@
 """Tests unitaires pour le générateur de commandes synthétiques (order_generator.py)."""
 
 import unittest
+
 from livraison_express_lite.domain.entities import OrderEntity
 from livraison_express_lite.infrastructure.implementation.dev.order_generator import (
     generate_labeled_orders,

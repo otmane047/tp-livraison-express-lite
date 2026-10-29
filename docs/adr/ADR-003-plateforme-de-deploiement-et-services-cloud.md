@@ -87,3 +87,4 @@ flowchart TD
 ### Compromis acceptés :
 * **Latence de démarrage à froid (*Cold Start*)** : Lors d'une montée en charge depuis zéro instance, le démarrage du conteneur et le chargement du `.joblib` en mémoire prennent ~1 à 2 secondes.  
   *Mitigation :* En production, nous configurons `--min-instances 1` pour conserver au moins une instance chaude en permanence.
+

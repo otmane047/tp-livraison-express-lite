@@ -52,3 +52,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
 
 # Point d'entrée de production
 CMD ["python", "main.py", "serve", "--host", "0.0.0.0", "--port", "8000"]
+

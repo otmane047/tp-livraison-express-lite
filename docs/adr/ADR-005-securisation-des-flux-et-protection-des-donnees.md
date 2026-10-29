@@ -104,3 +104,4 @@ flowchart LR
 | **Données** | Compromission de disque physique | Chiffrement AES-256 au repos via Cloud KMS |
 | **Données** | Accès non autorisé à la base SQL | Base privée sans IP publique, transit via connecteur VPC |
 | **Modèle ML** | Empoisonnement d'artefact / Exécution de code | Bucket en écriture verrouillée, vérification de checksum SHA-256 |
+

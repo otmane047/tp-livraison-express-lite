@@ -1,6 +1,7 @@
 """Tests unitaires pour la CLI (cli.py)."""
 
 import unittest
+
 from livraison_express_lite.cli import build_parser, main
 
 

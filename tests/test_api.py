@@ -7,10 +7,10 @@ Valide :
 """
 
 import unittest
+
 from fastapi.testclient import TestClient
 
 from livraison_express_lite.api.app import create_app
-from livraison_express_lite.domain.entities import OrderEntity
 
 
 class TestApi(unittest.TestCase):

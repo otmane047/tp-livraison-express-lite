@@ -1,6 +1,7 @@
 """Tests unitaires pour le service d'inférence (MLPredict)."""
 
 import unittest
+
 from livraison_express_lite.core.core import Core
 from livraison_express_lite.domain.entities import OrderEntity, PredictionEntity
 

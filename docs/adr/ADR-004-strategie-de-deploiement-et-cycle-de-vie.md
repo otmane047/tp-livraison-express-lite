@@ -95,3 +95,4 @@ Le basculement vers la version précédente (*Auto-rollback*) se déclenche auto
 
 ### Compromis acceptés :
 * **Nécessité d'une observabilité fine** : Requiert une collecte rigoureuse des logs et métriques en temps réel pour décider objectivement de la promotion ou de l'annulation d'une révision.
+

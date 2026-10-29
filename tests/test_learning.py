@@ -1,11 +1,12 @@
 """Tests unitaires pour les composants de machine learning (pipeline, features, splitter)."""
 
 import unittest
+
 from livraison_express_lite.core.learning.ml_pipeline import MLPipeline
 from livraison_express_lite.core.learning.order_feature import (
+    CATEGORICAL_FEATURES,
     FEATURE_COLUMNS,
     NUMERIC_FEATURES,
-    CATEGORICAL_FEATURES,
     orders_to_dataframe,
 )
 from livraison_express_lite.core.learning.train_test_splitter import TrainTestSplitter
