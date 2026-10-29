@@ -11,6 +11,8 @@ Ce projet structure le prototype Machine Learning issu du notebook (`notebooks/p
 - Inversion de dépendances (**Repository Pattern**) pour le stockage des commandes (`OrderRepository`) et des artefacts de modèle (`ModelRepository`).
 - Configuration externalisée via variables d'environnement (`pydantic-settings`).
 - Point d'entrée unique par composition root (`Core`).
+- Registre complet de décisions d'architecture (**ADR** couvrant le Cloud, le déploiement et la sécurité).
+- Conteneurisation de production multi-stage (**Docker**).
 
 ---
 
@@ -44,6 +46,14 @@ tp1/
 │   │   ├── config.py                    # Configuration Settings (Pydantic)
 │   │   └── __main__.py                  # Point d'entrée python -m
 │   └── livraison_express/               # Alias de commande CLI
+├── docs/                                # Architecture Decision Records (ADR)
+│   └── adr/
+│       ├── ADR-001-stockage-des-commandes.md
+│       ├── ADR-002-stockage-des-artefacts-de-modele.md
+│       ├── ADR-003-plateforme-de-deploiement-et-services-cloud.md
+│       ├── ADR-004-strategie-de-deploiement-et-cycle-de-vie.md
+│       ├── ADR-005-securisation-des-flux-et-protection-des-donnees.md
+│       └── README.md                    # Index des 5 ADRs
 ├── notebooks/                           # Notebook historique et artefacts
 │   ├── project_test_v1_final_final2.ipynb
 │   └── artifacts/
@@ -61,6 +71,8 @@ tp1/
 ├── scripts/                             # Scripts utilitaires
 │   ├── run_server.py
 │   └── train.py
+├── Dockerfile                           # Image de conteneur multi-stage non-root
+├── .dockerignore                        # Règles d'exclusion Docker
 ├── main.py                              # Point d'entrée racine
 ├── order.json                           # Exemple de payload de commande
 ├── pyproject.toml                       # Configuration packaging et ruff
@@ -71,9 +83,21 @@ tp1/
 
 ---
 
-## 3. Guide de Démarrage Rapide
+## 3. Architecture Decision Records (ADR)
 
-### 3.1. Installation des dépendances
+Le dossier [`docs/adr/`](docs/adr/) documente formellement les choix structurants au standard MADR :
+
+1. [**ADR-001**](docs/adr/ADR-001-stockage-des-commandes.md) : Persistance des commandes (`OrderRepository` : SQLite en local / PostgreSQL en production Cloud).
+2. [**ADR-002**](docs/adr/ADR-002-stockage-des-artefacts-de-modele.md) : Découplage du stockage d'artefacts (`ModelRepository` : Cloud Storage / S3 et In-Memory Caching au démarrage).
+3. [**ADR-003**](docs/adr/ADR-003-plateforme-de-deploiement-et-services-cloud.md) : **Plateforme de déploiement** (Cloud vs On-premise vs Local ; Google Cloud Run / AWS ECS Fargate, Cloud SQL / RDS, Secret Manager).
+4. [**ADR-004**](docs/adr/ADR-004-strategie-de-deploiement-et-cycle-de-vie.md) : **Stratégie de déploiement** (Canary Release 90/10 pour les modèles ML, Blue/Green pour les versions majeures, auto-rollback).
+5. [**ADR-005**](docs/adr/ADR-005-securisation-des-flux-et-protection-des-donnees.md) : **Sécurisation de bout en bout** (TLS 1.3, Auth API Key/JWT, validation Pydantic stricte, IAM sans clés statiques, chiffrement AES-256 KMS, VPC privé).
+
+---
+
+## 4. Guide de Démarrage Rapide
+
+### 4.1. Installation des dépendances locales
 
 ```bash
 # Activation de l'environnement virtuel (sous Windows)
@@ -84,7 +108,7 @@ pip install -e .
 pip install -r requirements-dev.txt
 ```
 
-### 3.2. Configuration de l'environnement (.env)
+### 4.2. Configuration de l'environnement (.env)
 
 ```bash
 copy .env.example .env
@@ -97,36 +121,23 @@ Variables configurables :
 
 ---
 
-## 4. Utilisation de la CLI
+## 5. Utilisation de la CLI
 
-Le projet expose une interface en ligne de commande complète :
-
-### 4.1. Entraîner le modèle
+### 5.1. Entraîner le modèle
 ```bash
 python -m livraison_express train
 # ou :
 python main.py train
 ```
-Cette commande génère le dataset, entraîne le pipeline Scikit-Learn avec tracking MLflow, calcule les métriques et sauvegarde l'artefact `.joblib`, `metrics.json` et `features.json`.
 
-### 4.2. Prédire une commande en local (sans serveur HTTP)
+### 5.2. Prédire une commande en local
 ```bash
 python -m livraison_express predict --file order.json
 # ou :
 python main.py predict --file order.json
 ```
-Sortie JSON attendue :
-```json
-{
-  "express_eligible": true,
-  "decision": "oui",
-  "probability": 0.9377,
-  "model_version": "1.0.0",
-  "prediction_timestamp": "2026-10-29T08:19:58.124916+00:00"
-}
-```
 
-### 4.3. Démarrer le serveur API
+### 5.3. Démarrer le serveur API
 ```bash
 python -m livraison_express serve --port 8000
 # ou :
@@ -137,7 +148,7 @@ uvicorn main:app --reload
 
 ---
 
-## 5. Endpoints de l'API HTTP
+## 6. Endpoints de l'API HTTP
 
 | Méthode | Route | Description | Code Succès | Code Erreur |
 | :--- | :--- | :--- | :--- | :--- |
@@ -147,12 +158,28 @@ uvicorn main:app --reload
 
 ---
 
-## 6. Tests Automatisés
+## 7. Conteneurisation Docker (Production)
 
-La suite de tests automatisés valide l'ensemble des couches de l'application :
+L'application intègre un `Dockerfile` multi-stage optimisé et sécurisé (utilisateur non-root, sans compilateurs en runtime, vérification de santé native `HEALTHCHECK`) :
+
+```bash
+# Construction de l'image
+docker build -t livraison-express-lite:latest .
+
+# Exécution du conteneur
+docker run -d -p 8000:8000 --name livraison-api livraison-express-lite:latest
+
+# Test de l'API conteneurisée
+curl http://localhost:8000/health
+```
+
+---
+
+## 8. Tests Automatisés
 
 ```bash
 pytest tests/
 # ou :
 python -m unittest discover -s tests -v
 ```
+18 tests unitaires et d'intégration validant 100% des cas sans dépendance externe.
