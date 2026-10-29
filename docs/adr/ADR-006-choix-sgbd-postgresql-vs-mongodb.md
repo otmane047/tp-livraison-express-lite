@@ -10,110 +10,118 @@
 
 ## 1. Contexte et Problématique
 
-Le simulateur ERP externe (`erp_simulator`) alimente deux systèmes de gestion de bases de données distincts :
-1. **PostgreSQL** : base de données relationnelle SQL contenant un historique long (depuis 2015) et le flux temps réel.
-2. **MongoDB** : base de données orientée documents NoSQL contenant un historique récent (depuis 2023) et le même flux temps réel.
+Dans le cadre de l'industrialisation du service d'éligibilité à la livraison express, notre application doit ingérer les commandes provenant du système ERP (`ERP Pro 2015`). Les retours d'expérience transmis par les développeurs et l'équipe d'infrastructure révèlent une situation organisationnelle et technique singulière :
 
-Notre application doit intégrer ces données via l'abstraction [`OrderRepository`](file:///d:/Cours/m2/IA%20dans%20le%20cloud/tp1/src/livraison_express_lite/infrastructure/order_repository.py) afin :
-- De servir les prédictions unitaires temps réel (`get`, `save`).
-- D'extraire l'ensemble des commandes pour réentraîner périodiquement le modèle de Machine Learning (`get_all`, `count`).
-- De gérer les évolutions historiques de schéma (colonnes `weekend` absentes avant juillet 2015, `preparation_time_min` absentes avant juillet 2017).
+```mermaid
+flowchart LR
+    ERP["ERP Pro 2015"] <-->|Échange bilatéral<br/>temps réel logiciel| PG[("PostgreSQL<br/>(Base de production)")]
+    PG -->|Échange unilatéral<br/>temps réel ETL| Mongo[("MongoDB<br/>(Base analytique)")]
+    
+    subgraph "Systèmes de Données Existants"
+        PG
+        Mongo
+    end
+```
+
+### État des lieux des deux bases de données :
+
+1. **PostgreSQL (Base de production transactionnelle OLTP)** :
+   * Première base de données développée pour le système, existant depuis **2015**.
+   * Schéma modifié successivement en **2017** (ajout du temps de préparation `preparation_time_min`) et en **2023**.
+   * Base non mise à jour depuis 2023 suite à la démission de l'administrateur de base de données (DBA), non remplacé à ce jour.
+   * **Contrainte critique** : Elle est activement partagée et requêtée par une **autre application métier critique** pour l'entreprise.
+
+2. **MongoDB (Base analytique OLAP / Data Analysts)** :
+   * Montée en **2023** pour isoler les requêtes exploratoires des Data Analysts afin d'éviter qu'ils ne surchargent ou ne « cassent » la base de production PostgreSQL.
+   * Alimentée par un pipeline ETL unilatéral temps réel depuis PostgreSQL.
+   * **Limite majeure** : L'historique des années précédentes (**2015-2022**) n'a **pas** été migré vers MongoDB. Seules les données depuis 2023 y sont présentes.
+   * **Risque de gouvernance** : Elle est actuellement maintenue par un **alternant arrivant bientôt en fin de contrat**, posant un risque à moyen terme sur la maintenance de l'ETL.
 
 ---
 
 ## 2. Facteurs de Décision (Decision Drivers)
 
-* **Intégrité et Typage des Données ML** : Le modèle Scikit-learn exige un vecteur tabulaire strict composé de 12 variables numériques et catégorielles.
-* **Volume d'historique disponible pour l'apprentissage** : Plus le volume historique labellisé est riche (2015-présent vs 2023-présent), plus le modèle peut apprendre des tendances saisonnières solides.
-* **Performance d'extraction par lot (*Batch ETL throughput*)** : Capacité à extraire des dizaines de milliers d'enregistrements en un temps minimal pour le réentraînement.
-* **Évolution de schéma et Traçabilité** : Capacité à auditer les migrations de données (table `schema_migrations`).
-* **Inversion de Dépendance (DIP - SOLID)** : L'application `livraison-express-lite` ne doit pas dépendre du moteur technique sous-jacent.
+* **Volume et profondeur de l'historique d'entraînement ML** : Un modèle supervisé de classification requiert un volume représentatif couvrant la saisonnalité et les cas extrêmes (10 ans vs 2 ans).
+* **Impact sur la production et l'application critique** : Éviter les verrous de table et la saturation CPU/I-O lors des extractions massives pour l'entraînement.
+* **Gouvernance, résilience et pérennité opérationnelle** : Dépendance vis-à-vis du départ imminent de l'alternant maintenant MongoDB et l'absence de DBA sur PostgreSQL.
+* **Typage et qualité des données** : Présence de schémas stricts vs documents flexibles, gestion des évolutions passées (valeurs nulles historiques).
+* **Respect des principes SOLID (Inversion de Dépendance - DIP)** : L'architecture applicative doit découpler le code métier du choix du moteur sous-jacent.
 
 ---
 
-## 3. Options Considérées
+## 3. Analyse Comparative des Options
 
-| Critère d'évaluation | Option A : PostgreSQL (Relationnel SQL) | Option B : MongoDB (NoSQL Document) |
+| Critère d'évaluation | Option A : PostgreSQL (Production) | Option B : MongoDB (Analytique) |
 | :--- | :--- | :--- |
-| **Profondeur de l'historique** | **10 ans (depuis 2015)** : historique complet (2015-2022 + 2023-présent) | **2 ans (depuis 2023)** : historique partagé récent uniquement |
-| **Structure & Typage** | Schéma relationnel strict, typage statique (`INTEGER`, `DOUBLE PRECISION`, `TEXT`) | Schéma dynamique flexible BSON, validation JSON Schema optionnelle |
-| **Extraction tabulaire ML** | Très rapide et native avec `psycopg` / Pandas (`cursor.fetchall()`) | Nécessite la désérialisation de documents BSON en dictionnaires |
-| **Indexation** | Index B-Tree primaires sur `order_id` et `order_date` | Index unique sur `order_id` |
-| **Gestion des migrations** | Table `schema_migrations` explicite versionnée | Évolution implicite document par document |
-| **ACID & Concurrence** | Strictement transactionnel (isolation multi-connexions) | Atomique au niveau du document individuel |
+| **Profondeur historique** | **10 ans (2015-présent)** : Données exhaustives avec historique long. | **2 ans (2023-présent)** : 8 années de données historiques manquantes. |
+| **Rôle dans l'entreprise** | Base de production partagée avec une application critique. | Base analytique dédiée aux Data Analysts. |
+| **Risque d'impact système** | Risque d'impact sur l'application critique en cas d'extraction non maîtrisée. | **Nul** sur la production applicative (base isolée). |
+| **Maintenance humaine** | Pas de DBA actif depuis 2023 (mais moteur PostgreSQL standard et mature). | Maintenue par un alternant en fin de contrat (risque sur le flux ETL). |
+| **Structure des données** | Schéma relationnel typé (`INTEGER`, `DOUBLE PRECISION`, `TEXT`). | BSON semi-structuré, validation flexible. |
+| **Gestion des flux récents** | Écriture bilatérale temps réel depuis l'ERP. | Alimentation temps réel asynchrone par ETL unilatéral. |
+| **Complexité d'intégration** | Requêtes SQL optimisées avec index (`order_date`, `order_id`). | Requêtes d'agrégation MongoDB / BSON decoding. |
 
 ---
 
 ## 4. Décision Retenue
 
-Nous retenons **PostgreSQL** comme source de données primaire pour l'intégration des commandes ERP, matérialisée par la classe [`PostgresOrderRepository`](file:///d:/Cours/m2/IA%20dans%20le%20cloud/tp1/src/livraison_express_lite/infrastructure/implementation/postgres_order_repository.py).
+Nous retenons **PostgreSQL** comme source de données primaire pour notre application de livraison express, tout en concevant un **système hybride et résilient grâce au Repository Pattern** :
+
+1. **Choix primaire : PostgreSQL via [`PostgresOrderRepository`](file:///d:/Cours/m2/IA%20dans%20le%20cloud/tp1/src/livraison_express_lite/infrastructure/implementation/postgres_order_repository.py)** :
+   * **Justification métier** : L'accès aux 10 années de données historiques (2015-présent) est indispensable pour entraîner un modèle de Machine Learning performant et capable de généraliser sur toutes les saisons et zones géographiques.
+   * **Contournement du risque de charge** : Les requêtes d'extraction pour le réentraînement sont bornées (`max_rows=10000`, absence de verrous bloquants `NOLOCK` / lecture non bloquante par défaut en MVCC PostgreSQL).
+   * **Pérennité** : PostgreSQL est nativement géré et ne dépend pas du script ETL de l'alternant susceptible de tomber en désuétude à son départ.
+
+2. **Mesure de secours et de découplage : Double implémentation SOLID (DIP)** :
+   * Conformément aux principes de Clean Architecture, nous avons également développé [`MongoOrderRepository`](file:///d:/Cours/m2/IA%20dans%20le%20cloud/tp1/src/livraison_express_lite/infrastructure/implementation/mongo_order_repository.py).
+   * La factory [`Core`](file:///d:/Cours/m2/IA%20dans%20le%20cloud/tp1/src/livraison_express_lite/core/core.py) instancie automatiquement le repository adéquat selon la variable d'environnement `ORDER_REPOSITORY_URL` :
+     * `postgresql://livraison:livraison@localhost:5432/livraison_express` (Recommandé)
+     * `mongodb://localhost:27017` (Bascule immédiate si l'application critique subit une saturation)
 
 ```mermaid
 flowchart TD
-    ERP[Simulateur ERP<br/>erp-simulator] -->|Flux historique + live| PG[(PostgreSQL 17<br/>Table orders)]
-    ERP -.->|Flux miroir 2023+| Mongo[(MongoDB 8<br/>Collection orders)]
+    subgraph "Sources Externes"
+        PG[(PostgreSQL - Prod 2015+)]
+        ETL[Pipeline ETL]
+        Mongo[(MongoDB - Analytics 2023+)]
+        PG -->|ETL unilatéral| ETL --> Mongo
+    end
 
     subgraph "Application livraison-express-lite"
-        OR[OrderRepository<br/>Contrat Abstrait]
-        POR[PostgresOrderRepository<br/>psycopg 3]
-        MOR[MongoOrderRepository<br/>pymongo]
+        DIP["Interface Abstraite : OrderRepository"]
         
-        OR -.->|Implémentation Retenue| POR
-        OR -.->|Implémentation Alternative| MOR
+        ImplPG["PostgresOrderRepository<br/>(Choix Principal : Historique 10 ans)"]
+        ImplMongo["MongoOrderRepository<br/>(Choix Secours : Zéro impact Prod)"]
         
-        POR -->|Lecture / Écriture| PG
-        MOR -.->|Secours / Alternatif| Mongo
+        DIP --- ImplPG
+        DIP --- ImplMongo
         
-        Core[Core Application] --> OR
-        Trainer[MLTrainer / Re-train] --> Core
-        API[API /predict] --> Core
+        ImplPG -->|Connexion| PG
+        ImplMongo -->|Connexion| Mongo
+        
+        AppCore["Core (Factory Singleton)"] --> DIP
+        API["API FastAPI /predict"] --> AppCore
+        Train["Orchestrateur ML / Retrain"] --> AppCore
     end
 ```
 
-### Justification de la décision :
-1. **Historique d'entraînement supérieur** : PostgreSQL contient l'historique de 2015 à aujourd'hui, offrant un jeu d'entraînement beaucoup plus dense et représentatif pour le modèle de Machine Learning.
-2. **Typage strict et prévention des anomalies** : Les contraintes de colonnes SQL évitent d'injecter des données corrompues dans les transformers Scikit-learn.
-3. **Gestion explicite des valeurs manquantes** : Les colonnes historiques `NULL` (`weekend` avant 2015, `preparation_time_min` avant 2017) sont naturellement prises en charge par les `SimpleImputer(strategy="median")` de notre pipeline [`MLPipeline`](file:///d:/Cours/m2/IA%20dans%20le%20cloud/tp1/src/livraison_express_lite/core/learning/ml_pipeline.py).
-4. **Interchangeabilité totale via le Repository Pattern** : Une implémentation [`MongoOrderRepository`](file:///d:/Cours/m2/IA%20dans%20le%20cloud/tp1/src/livraison_express_lite/infrastructure/implementation/mongo_order_repository.py) est également fournie pour permettre une bascule immédiate par simple changement de la variable d'environnement `ORDER_REPOSITORY_URL`.
-
 ---
 
-## 5. Architecture Technique et Migration des Schémas
+## 5. Gestion des Migrations Historiques dans le Code
 
-### Schéma de la table PostgreSQL `orders` :
-```sql
-CREATE TABLE IF NOT EXISTS orders (
-    order_id TEXT PRIMARY KEY,
-    order_date DATE,
-    hour INTEGER NOT NULL,
-    day_of_week INTEGER NOT NULL,
-    weekend INTEGER,
-    distance_km DOUBLE PRECISION NOT NULL,
-    order_value_eur DOUBLE PRECISION NOT NULL,
-    weight_kg DOUBLE PRECISION NOT NULL,
-    stock_available INTEGER NOT NULL,
-    preparation_time_min DOUBLE PRECISION,
-    carrier_capacity DOUBLE PRECISION NOT NULL,
-    weather TEXT NOT NULL,
-    delivery_zone TEXT NOT NULL,
-    customer_type TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_orders_order_date ON orders (order_date);
-```
+L'historique PostgreSQL contenant les évolutions de schéma de 2015 et 2017, la classe `PostgresOrderRepository` encapsule la logique d'adaptation sans corrompre le domaine métier :
 
-### Valeurs par défaut pour les historiques anciens :
-Lors de la conversion en `OrderEntity` :
-- Si `weekend` est `None` (avant juillet 2015) : dérivé à partir de `day_of_week >= 5`.
-- Si `preparation_time_min` est `None` (avant juillet 2017) : complété par une valeur médiane par défaut (`25.0 min`) ou traité par le `SimpleImputer` du pipeline ML.
+* **Colonne `weekend` (NULL avant juillet 2015)** : Dérivée automatiquement à la volée via la formule métier `day_of_week >= 5`.
+* **Colonne `preparation_time_min` (NULL avant juillet 2017)** : Imputée par la médiane métier (`25.0 min`) ou prise en charge directement par le `SimpleImputer` du pipeline Scikit-Learn.
 
 ---
 
 ## 6. Conséquences
 
 ### Positives :
-* Précision du modèle accrue grâce au volume de données 2015-présent.
-* Compatibilité native avec les outils Cloud Managés (Google Cloud SQL, AWS RDS).
-* Respect parfait des principes SOLID (Inversion de dépendance).
+* **Qualité de l'IA** : Volume d'entraînement maximal (10 ans de données réelles).
+* **Indépendance vis-à-vis du départ de l'alternant** : Pas de dépendance critique envers la maintenance du flux ETL vers MongoDB.
+* **Agilité architecturale** : Bascule possible vers MongoDB en 0 seconde via simple changement de configuration d'environnement, sans recompilation ni modification de code.
 
-### Compromis acceptés :
-* Nécessite un conteneur PostgreSQL actif (géré via `docker-compose.yml`).
+### Compromis acceptés et surveillances :
+* **Surveillance de la charge** : L'orchestrateur de réentraînement planifie ses cycles d'apprentissage avec modération (`MIN_NEW_ORDERS=50`, requêtes en lecture seule `SELECT`) pour préserver les performances de l'autre application critique partageant PostgreSQL.
